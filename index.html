@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#273c62" />
+    <title>ISE 14.7 Web Studio</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="titlebar">
+        <div class="brand-mark" aria-hidden="true">i</div>
+        <div class="title-text"><strong>Project Navigator</strong><span id="windowTitle">led_blink — ISE 14.7 Web Studio</span></div>
+        <div class="edition-label"><span class="edition-dot"></span>Browser prototype</div>
+        <button class="window-button" aria-label="Minimize">—</button>
+        <button class="window-button" aria-label="Restore">□</button>
+        <button class="window-button close-window" aria-label="Close">×</button>
+      </header>
+
+      <nav class="menubar" aria-label="Application menu">
+        <button data-menu="File">File</button>
+        <button data-menu="Edit">Edit</button>
+        <button data-menu="Project">Project</button>
+        <button data-menu="View">View</button>
+        <button data-menu="Tools">Tools</button>
+        <button data-menu="Window">Window</button>
+        <button data-menu="Help">Help</button>
+        <div class="menu-popup" id="menuPopup" hidden></div>
+      </nav>
+
+      <div class="toolbar" role="toolbar" aria-label="Main tools">
+        <button class="tool-button" id="newProjectButton"><span class="tool-icon new-icon">＋</span><span>New Project</span></button>
+        <span class="tool-separator"></span>
+        <button class="tool-button" id="addSourceButton"><span class="tool-icon file-icon">▤</span><span>Add Source</span></button>
+        <button class="tool-button" id="saveButton"><span class="tool-icon save-icon">▣</span><span>Save</span></button>
+        <span class="tool-separator"></span>
+        <button class="tool-button primary-tool" id="checkButton"><span class="tool-icon run-icon">▶</span><span>Check Source</span></button>
+        <div class="toolbar-spacer"></div>
+        <span class="device-label"><span class="chip-icon">▦</span><span id="deviceLabel">Spartan-6 · xc6slx9</span></span>
+        <span class="saved-indicator" id="savedIndicator"><span class="saved-dot"></span>Saved in this browser</span>
+      </div>
+
+      <main class="main-shell">
+        <div class="work-area">
+          <aside class="navigator" aria-label="Project navigator">
+            <div class="panel-tabs" role="tablist" aria-label="Navigator views">
+              <button class="panel-tab active" role="tab" aria-selected="true" data-panel="design">Design</button>
+              <button class="panel-tab" role="tab" aria-selected="false" data-panel="files">Files</button>
+              <button class="panel-tab" role="tab" aria-selected="false" data-panel="libraries">Libraries</button>
+            </div>
+            <div class="navigator-scroll">
+              <section class="source-panel">
+                <div class="section-heading">
+                  <div><span class="disclosure">⌄</span><span class="folder-icon">▰</span><strong id="projectNameHeading">led_blink</strong></div>
+                  <button class="icon-action" id="addSourceSmall" title="Add source">＋</button>
+                </div>
+                <div class="tree-subtitle" id="projectTarget">xc6slx9-2-tqg144 · Synthesis/Implementation</div>
+                <div class="source-list" id="sourceList" role="tree"></div>
+              </section>
+
+              <section class="process-panel">
+                <div class="section-heading process-heading"><div><span class="disclosure">⌄</span><span class="process-icon">⚙</span><strong>Processes: <span id="processTarget">blinky</span></strong></div></div>
+                <div class="process-list">
+                  <div class="process-group"><span class="disclosure">⌄</span><span class="gear small-gear">⚙</span><span>Design Utilities</span></div>
+                  <button class="process-item" data-action="check"><span class="process-play">▶</span>Check Source Structure</button>
+                  <button class="process-item" data-action="source"><span class="process-play">▶</span>View HDL Source</button>
+                  <div class="process-group"><span class="disclosure">›</span><span class="gear small-gear">⚙</span><span>Synthesize - XST</span></div>
+                  <div class="process-group"><span class="disclosure">›</span><span class="gear small-gear">⚙</span><span>Implement Design</span></div>
+                  <div class="process-group"><span class="disclosure">›</span><span class="gear small-gear">⚙</span><span>Generate Programming File</span></div>
+                  <div class="process-note">Vendor synthesis and bitstream tools are not connected in this browser prototype.</div>
+                </div>
+              </section>
+            </div>
+            <div class="navigator-status"><span class="status-led"></span>Design view</div>
+          </aside>
+
+          <section class="editor-region" aria-label="Source editor">
+            <div class="document-tabs" id="documentTabs">
+              <button class="doc-tab active" data-document="source"><span class="vhdl-badge">V</span><span id="activeTabName">blinky.vhd</span><span class="tab-close" aria-hidden="true">×</span></button>
+              <div class="tab-tools"><button title="Split editor">▥</button><button title="More options">⋮</button></div>
+            </div>
+            <div class="editor-toolbar">
+              <div class="editor-location"><span class="crumb-root">led_blink</span><span class="crumb-sep">›</span><span id="breadcrumbFile">blinky.vhd</span></div>
+              <div class="editor-tools"><button id="fontDown" title="Decrease text size">A−</button><button id="fontUp" title="Increase text size">A+</button><span class="editor-separator"></span><span id="languageBadge">VHDL</span></div>
+            </div>
+            <div class="editor-wrap">
+              <div class="line-numbers" id="lineNumbers" aria-hidden="true"></div>
+              <textarea class="code-editor" id="codeEditor" aria-label="HDL source editor" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+            </div>
+            <div class="editor-status"><span id="cursorPosition">Ln 1, Col 1</span><span>UTF-8</span><span id="statusLanguage">VHDL</span><span class="status-spacer"></span><span class="status-ready"><span></span>Ready</span></div>
+          </section>
+        </div>
+
+        <section class="bottom-panel" aria-label="Output panels">
+          <div class="output-tabs" role="tablist" aria-label="Output views">
+            <button class="output-tab active" role="tab" aria-selected="true" data-output="console">Console</button>
+            <button class="output-tab" role="tab" aria-selected="false" data-output="errors">Errors <span class="count-pill" id="errorCount">0</span></button>
+            <button class="output-tab" role="tab" aria-selected="false" data-output="warnings">Warnings <span class="count-pill" id="warningCount">0</span></button>
+            <div class="output-tab-actions"><button id="clearConsole">Clear</button><button title="Collapse output">⌄</button></div>
+          </div>
+          <div class="console-view" id="consoleView" role="tabpanel">
+            <div class="console-toolbar"><span>Messages</span><span class="console-path" id="consoleProject">led_blink</span></div>
+            <div class="console-content" id="consoleContent" aria-live="polite"></div>
+          </div>
+          <div class="empty-output" id="emptyOutput" hidden role="tabpanel"></div>
+        </section>
+      </main>
+      <footer class="statusbar"><span class="connection-led"></span><span id="footerMessage">ISE 14.7 style workspace · Local browser storage</span><span class="statusbar-spacer"></span><span>Prototype 0.1</span><span class="status-grip">◢</span></footer>
+    </div>
+
+    <div class="dialog-backdrop" id="dialogBackdrop" hidden>
+      <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+        <div class="dialog-titlebar"><div class="dialog-app-icon">i</div><strong id="dialogTitle">New Project</strong><button class="dialog-close" id="dialogClose" aria-label="Close">×</button></div>
+        <form id="dialogForm"><div class="dialog-content" id="dialogContent"></div><div class="dialog-actions"><button type="button" class="secondary-button" id="dialogCancel">Cancel</button><button type="submit" class="primary-button" id="dialogSubmit">Create</button></div></form>
+      </section>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>
+
