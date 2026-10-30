@@ -7,8 +7,8 @@
     name: "led_blink",
     device: "xc6slx9-2-tqg144",
     family: "Spartan-6",
-    sources: [{ name: "blinky.vhd", language: "VHDL", content: VHDL_STARTER, top: true }],
-    activeSource: "blinky.vhd"
+    sources: [{ name: "blinky.v", language: "Verilog", content: VERILOG_STARTER, top: true }],
+    activeSource: "blinky.v"
   };
 
   const loadedLibrary = loadProjectLibrary();
@@ -19,6 +19,9 @@
   let warningCount = 0;
   let lastErrors = [];
   let lastWarnings = [];
+  let lastSynthesis = null;
+  let synthesisWorker = null;
+  let synthesisOutput = "";
   let fontSize = 11;
   let dialogSubmitAction = null;
   const $ = (selector, parent = document) => parent.querySelector(selector);
@@ -146,6 +149,7 @@
     empty.hidden = panel === "console";
     if (panel === "errors") renderIssues(empty, lastErrors, "ERROR", "No errors to display.");
     if (panel === "warnings") renderIssues(empty, lastWarnings, "WARNING", "No warnings to display.");
+    if (panel === "synthesis") renderSynthesisResults(empty);
   }
 
   function renderIssues(container, messages, label, emptyMessage) {
@@ -162,6 +166,66 @@
       row.append(tag, text);
       container.append(row);
     });
+  }
+
+  function renderSynthesisResults(container) {
+    container.replaceChildren();
+    if (!lastSynthesis) {
+      container.textContent = "No synthesis results yet. Run Synthesize Verilog for Xilinx on a Verilog project.";
+      return;
+    }
+
+    const report = document.createElement("div");
+    report.className = "synthesis-report";
+    const heading = document.createElement("h3");
+    heading.textContent = `Synthesis complete · ${lastSynthesis.projectName}`;
+    const note = document.createElement("p");
+    note.textContent = lastSynthesis.targetFamily
+      ? `Top module ${lastSynthesis.topModule} · mapped to Xilinx ${lastSynthesis.targetFamily} cells for ${lastSynthesis.targetLabel}. This does not place the design or generate a bitstream.`
+      : `Top module ${lastSynthesis.topModule} · generic Yosys netlist because the family is not mapped by this browser flow. No bitstream is generated.`;
+    const stats = document.createElement("div");
+    stats.className = "synthesis-stats";
+    [
+      ["Top module", lastSynthesis.topModule],
+      [lastSynthesis.targetFamily ? "Mapped cells" : "Generic cells", String(lastSynthesis.cellCount)],
+      ["Ports", String(lastSynthesis.portCount)],
+      ["Wires", String(lastSynthesis.wireCount)]
+    ].forEach(([label, value]) => {
+      const card = document.createElement("div");
+      card.className = "synthesis-stat";
+      const valueNode = document.createElement("strong");
+      valueNode.textContent = value;
+      const labelNode = document.createElement("span");
+      labelNode.textContent = label;
+      card.append(valueNode, labelNode);
+      stats.append(card);
+    });
+    const cellsHeading = document.createElement("h4");
+    cellsHeading.textContent = "Cell types";
+    const cellList = document.createElement("div");
+    cellList.className = "synthesis-cell-list";
+    const cells = Object.entries(lastSynthesis.cellTypes).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    if (!cells.length) {
+      cellList.textContent = "No cells were inferred for this design.";
+    } else {
+      cells.slice(0, 24).forEach(([type, count]) => {
+        const row = document.createElement("div");
+        row.className = "synthesis-cell-row";
+        const typeNode = document.createElement("code");
+        typeNode.textContent = type;
+        const countNode = document.createElement("span");
+        countNode.textContent = String(count);
+        row.append(typeNode, countNode);
+        cellList.append(row);
+      });
+    }
+    const logNote = document.createElement("p");
+    logNote.className = "synthesis-log-note";
+    logNote.textContent = lastSynthesis.edif
+      ? "The full tool output is in the Console tab. The EDIF and JSON files are available in the upper-right buttons."
+      : "The full tool output is in the Console tab. Download the JSON netlist from the upper-right button.";
+    report.append(heading, note, stats, cellsHeading, cellList, logNote);
+    container.append(report);
   }
 
   function checkSource() {
@@ -233,7 +297,7 @@
   }
 
   function showNewProjectDialog() {
-    showDialog("New Project", `<p class="dialog-copy">Create an ISE-style FPGA project in this browser. Your project and HDL sources are stored in local browser storage.</p><label class="field">Project name<input name="projectName" value="my_fpga_project" required maxlength="48" pattern="[A-Za-z][A-Za-z0-9_]*" /><span class="field-hint">Start with a letter, then use letters, numbers, and underscores.</span></label><label class="field">Device family<select name="family"><option>Spartan-6</option><option>Spartan-3</option><option>Virtex-6</option><option>Artix-7</option></select></label><label class="field">Device<input name="device" value="xc6slx9-2-tqg144" required /></label><label class="field">Initial source language<select name="language"><option>VHDL</option><option>Verilog</option></select></label>`, "Create Project", form => {
+    showDialog("New Project", `<p class="dialog-copy">Create an ISE-style FPGA project in this browser. Your project and HDL sources are stored in local browser storage.</p><label class="field">Project name<input name="projectName" value="my_fpga_project" required maxlength="48" pattern="[A-Za-z][A-Za-z0-9_]*" /><span class="field-hint">Start with a letter, then use letters, numbers, and underscores.</span></label><label class="field">Device family<select name="family"><option>Spartan-6</option><option>Spartan-3</option><option>Virtex-6</option><option>Artix-7</option></select></label><label class="field">Device<input name="device" value="xc6slx9-2-tqg144" required /></label><label class="field">Initial source language<select name="language"><option>VHDL</option><option selected>Verilog</option></select></label>`, "Create Project", form => {
       const data = new FormData(form);
       const language = data.get("language");
       const name = String(data.get("projectName")).trim();
@@ -288,6 +352,72 @@
     addConsoleLine("INFO", `Exported ${project.name} as a portable JSON project file.`);
   }
 
+  function exportActiveSource() {
+    saveActiveSource();
+    const source = getActiveSource();
+    if (!source) return;
+    const blob = new Blob([source.content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = source.name;
+    link.click();
+    URL.revokeObjectURL(url);
+    persistProject();
+    addConsoleLine("INFO", `Downloaded source file ${source.name}.`);
+  }
+
+  function importHdlSources() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = true;
+    input.accept = ".v,.vh,.sv,.vhd,.vhdl,text/plain";
+    input.addEventListener("change", async () => {
+      const files = [...(input.files || [])];
+      if (!files.length) return;
+      const supported = files.filter(file => /\.(v|vh|sv|vhd|vhdl)$/i.test(file.name));
+      const totalBytes = supported.reduce((total, file) => total + file.size, 0);
+      if (!supported.length) {
+        addConsoleLine("ERROR", "Choose Verilog (.v, .vh, .sv) or VHDL (.vhd, .vhdl) source files.");
+        switchOutput("console");
+        return;
+      }
+      if (totalBytes > 2 * 1024 * 1024) {
+        addConsoleLine("ERROR", "The selected HDL files exceed the 2 MB import limit for browser storage.");
+        switchOutput("console");
+        return;
+      }
+
+      saveActiveSource();
+      let added = 0;
+      let skipped = 0;
+      for (const file of supported) {
+        const name = file.name.replace(/[\\/]/g, "_");
+        if (project.sources.some(source => source.name.toLowerCase() === name.toLowerCase())) {
+          skipped += 1;
+          continue;
+        }
+        const language = /\.(v|vh|sv)$/i.test(name) ? "Verilog" : "VHDL";
+        project.sources.push({ name, language, content: await file.text(), top: false });
+        if (added === 0) project.activeSource = name;
+        added += 1;
+      }
+      if (added) {
+        renderProject();
+        try {
+          persistProject();
+          addConsoleLine("SUCCESS", `Imported ${added} HDL source file${added === 1 ? "" : "s"} into ${project.name}.`);
+        } catch (error) {
+          addConsoleLine("ERROR", `Files were opened, but the browser could not save this project: ${error.message}`);
+        }
+      }
+      if (skipped) addConsoleLine("WARNING", `${skipped} file${skipped === 1 ? " was" : "s were"} skipped because the project already has a file with that name.`);
+      if (!added && !skipped) addConsoleLine("ERROR", "No supported HDL files were imported.");
+      switchOutput("console");
+    });
+    input.click();
+  }
+
   function importProject() {
     const input = document.createElement("input");
     input.type = "file";
@@ -314,8 +444,205 @@
     input.click();
   }
 
+  function stripVerilogComments(text) {
+    return String(text).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  }
+
+  function findDeclaredVerilogModules(sources) {
+    const modules = [];
+    sources.forEach(source => {
+      const text = stripVerilogComments(source.content);
+      const pattern = /\bmodule\s+(?:(?:automatic|static)\s+)?([A-Za-z_$][\w$]*)/g;
+      for (const match of text.matchAll(pattern)) {
+        if (!modules.some(module => module.name === match[1])) modules.push({ name: match[1], source });
+      }
+    });
+    return modules;
+  }
+
+  function findTopVerilogModules(sources) {
+    const modules = findDeclaredVerilogModules(sources);
+    const allSourceText = sources.map(source => stripVerilogComments(source.content)).join("\n");
+    const instantiated = new Set();
+    modules.forEach(({ name }) => {
+      const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const pattern = new RegExp(`\\b${escapedName}\\b\\s+(?:#\\s*\\([\\s\\S]*?\\)\\s*)?[A-Za-z_$][\\w$]*\\s*\\(`);
+      if (pattern.test(allSourceText)) instantiated.add(name);
+    });
+    const roots = modules.filter(module => !instantiated.has(module.name));
+    return roots.length ? roots : modules;
+  }
+
+  function runSynthesisProcess() {
+    const sources = project.sources.filter(source => source.language === "Verilog");
+    if (!sources.length) {
+      addConsoleLine("WARNING", "The browser synthesis engine currently accepts Verilog/SystemVerilog sources. Add or import a Verilog source to run it.");
+      switchOutput("console");
+      return;
+    }
+    const declaredModules = findDeclaredVerilogModules(sources);
+    const inferredTops = findTopVerilogModules(sources);
+    if (!declaredModules.length) {
+      addConsoleLine("ERROR", "No Verilog module declaration was found in the project sources.");
+      switchOutput("console");
+      return;
+    }
+    const preferredSource = sources.find(source => source.top);
+    const preferredModule = preferredSource && declaredModules.find(module => module.source === preferredSource);
+    if (preferredModule || declaredModules.length === 1) {
+      startYosysSynthesis((preferredModule || declaredModules[0]).name, sources);
+      return;
+    }
+
+    const defaultTop = inferredTops[0]?.name;
+    const options = declaredModules.map(module => `<option value="${escapeHtml(module.name)}" ${module.name === defaultTop ? "selected" : ""}>${escapeHtml(module.name)}</option>`).join("");
+    showDialog("Choose Top Module", `<p class="dialog-copy">More than one top-level Verilog module was found. Choose the design entry point for synthesis.</p><label class="field">Top module<select name="topModule">${options}</select></label>`, "Synthesize", form => {
+      const topModule = String(new FormData(form).get("topModule"));
+      closeDialog();
+      startYosysSynthesis(topModule, sources);
+    });
+  }
+
+  function appendToolLog(output) {
+    const lines = String(output || "").replace(/\r/g, "").replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "").split("\n").filter(line => line.trim());
+    const visibleLines = lines.slice(-60);
+    if (lines.length > visibleLines.length) addConsoleLine("INFO", `Earlier synthesis output omitted from the visible log (${lines.length - visibleLines.length} lines).`);
+    visibleLines.forEach(line => addConsoleLine("YOSYS", line));
+  }
+
+  function summarizeNetlist(netlistText, topModule, projectName, targetLabel, targetFamily, edif) {
+    const netlist = JSON.parse(netlistText);
+    const module = netlist.modules?.[topModule];
+    if (!module) throw new Error(`The JSON netlist does not contain the selected top module “${topModule}”.`);
+    const cells = Object.values(module.cells || {});
+    const cellTypes = {};
+    cells.forEach(cell => { cellTypes[cell.type] = (cellTypes[cell.type] || 0) + 1; });
+    return {
+      projectName,
+      topModule,
+      targetLabel,
+      targetFamily: targetFamily || null,
+      edif: edif || null,
+      netlist: netlistText,
+      cellCount: cells.length,
+      portCount: Object.keys(module.ports || {}).length,
+      wireCount: Object.keys(module.netnames || {}).length,
+      cellTypes
+    };
+  }
+
+  function startYosysSynthesis(topModule, sources) {
+    if (synthesisWorker) return;
+    saveActiveSource();
+    try { persistProject(); } catch (error) { addConsoleLine("WARNING", `Project save failed before synthesis: ${error.message}`); }
+    const sourceSnapshot = sources.map(source => ({ name: source.name, content: source.content }));
+    const projectName = project.name;
+    const targetLabel = `${project.family} · ${project.device}`;
+    const familyKey = project.family.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const familyMap = { "spartan6": "xc6s", "spartan3": "xc3s", "virtex6": "xc6v", "artix7": "xc7" };
+    const targetFamily = familyMap[familyKey] || null;
+    synthesisOutput = "";
+    lastSynthesis = null;
+    $("#downloadEdif").hidden = true;
+    $("#downloadNetlist").hidden = true;
+    $("#synthesizeButton").disabled = true;
+    $$(".process-item[data-action=synthesize]").forEach(button => { button.disabled = true; });
+    switchOutput("console");
+    addConsoleLine("INFO", `Starting browser synthesis for ${projectName}, top module ${topModule}.`);
+    addConsoleLine("INFO", targetFamily
+      ? `Yosys will map the design to the ${targetFamily} Xilinx family. The first run downloads its WebAssembly engine from jsDelivr.`
+      : "Yosys will create a generic logic netlist because this project family is not mapped by the browser flow.");
+
+    try {
+      synthesisWorker = new Worker(new URL("synth-worker.js", document.baseURI), { type: "module" });
+    } catch (error) {
+      finishSynthesisWorker();
+      addConsoleLine("ERROR", `Could not start the synthesis worker: ${error.message}`);
+      switchOutput("errors");
+      return;
+    }
+
+    synthesisWorker.onmessage = event => {
+      const result = event.data;
+      if (result.type === "output") synthesisOutput += result.text;
+      if (result.type === "status") $("#footerMessage").textContent = result.message;
+      if (result.type === "progress") {
+        const percent = result.totalLength ? Math.min(100, Math.round(result.doneLength * 100 / result.totalLength)) : 0;
+        $("#footerMessage").textContent = percent ? `Downloading Yosys: ${percent}%` : "Downloading Yosys engine…";
+      }
+      if (result.type === "done") {
+        finishSynthesisWorker();
+        appendToolLog(synthesisOutput);
+        try {
+          lastSynthesis = summarizeNetlist(result.netlist, topModule, projectName, targetLabel, targetFamily, result.edif);
+          lastErrors = [];
+          $("#errorCount").textContent = "0";
+          $("#downloadNetlist").hidden = false;
+          $("#downloadEdif").hidden = !lastSynthesis.edif;
+          addConsoleLine("SUCCESS", `Synthesis finished: ${lastSynthesis.cellCount} cell(s), ${lastSynthesis.portCount} port(s).`);
+          addConsoleLine("WARNING", "The netlist is not place-and-route output and cannot be loaded as an FPGA programming file.");
+          switchOutput("synthesis");
+        } catch (error) {
+          lastErrors = [error.message];
+          $("#errorCount").textContent = "1";
+          addConsoleLine("ERROR", `Could not read the synthesis result: ${error.message}`);
+          switchOutput("errors");
+        }
+      }
+      if (result.type === "error") {
+        finishSynthesisWorker();
+        appendToolLog(synthesisOutput);
+        lastErrors = [result.message || "Yosys synthesis failed."];
+        $("#errorCount").textContent = String(lastErrors.length);
+        addConsoleLine("ERROR", lastErrors[0]);
+        switchOutput("errors");
+      }
+    };
+    synthesisWorker.onerror = event => {
+      finishSynthesisWorker();
+      lastErrors = [event.message || "The synthesis worker stopped unexpectedly."];
+      $("#errorCount").textContent = String(lastErrors.length);
+      addConsoleLine("ERROR", lastErrors[0]);
+      switchOutput("errors");
+    };
+    synthesisWorker.postMessage({ topModule, sources: sourceSnapshot, targetFamily });
+  }
+
+  function finishSynthesisWorker() {
+    if (synthesisWorker) synthesisWorker.terminate();
+    synthesisWorker = null;
+    $("#synthesizeButton").disabled = false;
+    $$(".process-item[data-action=synthesize]").forEach(button => { button.disabled = false; });
+    $("#footerMessage").textContent = "ISE 14.7 style workspace · Local browser storage";
+  }
+
+  function downloadNetlist() {
+    if (!lastSynthesis) return;
+    const blob = new Blob([lastSynthesis.netlist], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${lastSynthesis.topModule}.yosys.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    addConsoleLine("INFO", `Downloaded the Yosys JSON netlist for ${lastSynthesis.topModule}.`);
+  }
+
+  function downloadEdif() {
+    if (!lastSynthesis?.edif) return;
+    const blob = new Blob([lastSynthesis.edif], { type: "application/edif;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${lastSynthesis.topModule}.edif`;
+    link.click();
+    URL.revokeObjectURL(url);
+    addConsoleLine("INFO", `Downloaded the Xilinx-family EDIF netlist for ${lastSynthesis.topModule}.`);
+  }
+
   function runProcess(action) {
     if (action === "check") return checkSource();
+    if (action === "synthesize") return runSynthesisProcess();
     if (action === "source") {
       addConsoleLine("INFO", `Showing ${project.activeSource} in the editor.`);
       switchOutput("console");
@@ -342,20 +669,20 @@
 
   function showMenu(name, button) {
     const actions = {
-      File: [["New Project", showNewProjectDialog], ["Open Project…", showOpenProjectDialog], ["Add Source…", showAddSourceDialog], ["Save", () => { persistProject(); addConsoleLine("INFO", "Project saved in this browser."); }], ["Export Project…", exportProject], ["Import Project…", importProject], ["Project Library…", showOpenProjectDialog]],
+      File: [["New Project", showNewProjectDialog], ["Open Project…", showOpenProjectDialog], ["Add Source…", showAddSourceDialog], ["Import HDL File(s)…", importHdlSources], ["Save", () => { persistProject(); addConsoleLine("INFO", "Project saved in this browser."); }], ["Download Current Source…", exportActiveSource], ["Export Project…", exportProject], ["Import Project…", importProject], ["Project Library…", showOpenProjectDialog]],
       Edit: [["Undo", () => document.execCommand("undo")], ["Redo", () => document.execCommand("redo")], ["Select All", () => editor.select()]],
-      Project: [["Check Source Structure", checkSource], ["Synthesize - XST", () => runProcess("Synthesize - XST")], ["Implement Design", () => runProcess("Implement Design")], ["Generate Programming File", () => runProcess("Generate Programming File")]],
-      View: [["Design", () => activatePanel("design")], ["Files", () => activatePanel("files")], ["Console", () => switchOutput("console")]],
+      Project: [["Check Source Structure", checkSource], ["Synthesize Verilog for Xilinx", () => runProcess("synthesize")], ["Implement Design", () => runProcess("Implement Design")], ["Generate Programming File", () => runProcess("Generate Programming File")]],
+      View: [["Design", () => activatePanel("design")], ["Files", () => activatePanel("files")], ["Console", () => switchOutput("console")], ["Synthesis Results", () => switchOutput("synthesis")]],
       Tools: [["Check Source Structure", checkSource], ["Device and project settings", () => showProjectSettings()]],
       Window: [["Source Editor", () => editor.focus()], ["Console", () => switchOutput("console")]],
-      Help: [["About this prototype", () => { addConsoleLine("INFO", "ISE 14.7 inspired browser workspace. No proprietary AMD/Xilinx engine is bundled."); switchOutput("console"); }], ["Getting started", () => { addConsoleLine("INFO", "Edit the HDL source, save it in this browser, then use Check Source for a basic structure review."); switchOutput("console"); }]]
+      Help: [["About this prototype", () => { addConsoleLine("INFO", "ISE 14.7 inspired browser workspace. Yosys provides open-source Xilinx-family Verilog synthesis; proprietary AMD/Xilinx tools are not bundled."); switchOutput("console"); }], ["Getting started", () => { addConsoleLine("INFO", "Import or edit Verilog sources, then run Synthesize Verilog for Xilinx. VHDL can be edited and checked, but is not handled by the current synthesis engine."); switchOutput("console"); }]]
     };
     const popup = $("#menuPopup");
     if (!popup.hidden && popup.dataset.menu === name) { popup.hidden = true; button.classList.remove("open"); return; }
     $$(".menubar>button").forEach(item => item.classList.remove("open"));
     popup.replaceChildren();
     (actions[name] || []).forEach(([label, callback], index) => {
-      if (name === "File" && (index === 3 || index === 6) || name === "Project" && index === 1) {
+      if (name === "File" && (index === 4 || index === 8) || name === "Project" && index === 1) {
         const divider = document.createElement("div"); divider.className = "menu-divider"; popup.append(divider);
       }
       const item = document.createElement("button"); item.textContent = label; item.addEventListener("click", () => { popup.hidden = true; button.classList.remove("open"); callback(); }); popup.append(item);
@@ -399,12 +726,16 @@
   });
   $("#newProjectButton").addEventListener("click", showNewProjectDialog);
   $("#addSourceButton").addEventListener("click", showAddSourceDialog);
+  $("#importHdlButton").addEventListener("click", importHdlSources);
   $("#addSourceSmall").addEventListener("click", showAddSourceDialog);
   $("#saveButton").addEventListener("click", () => { persistProject(); addConsoleLine("INFO", "Project saved in this browser."); });
   $("#checkButton").addEventListener("click", checkSource);
+  $("#synthesizeButton").addEventListener("click", runSynthesisProcess);
   $("#fontDown").addEventListener("click", () => { fontSize = Math.max(9, fontSize - 1); editor.style.fontSize = `${fontSize}px`; lineNumbers.style.fontSize = `${fontSize}px`; });
   $("#fontUp").addEventListener("click", () => { fontSize = Math.min(18, fontSize + 1); editor.style.fontSize = `${fontSize}px`; lineNumbers.style.fontSize = `${fontSize}px`; });
   $("#clearConsole").addEventListener("click", () => $("#consoleContent").replaceChildren());
+  $("#downloadNetlist").addEventListener("click", downloadNetlist);
+  $("#downloadEdif").addEventListener("click", downloadEdif);
   $$(".panel-tab").forEach(tab => tab.addEventListener("click", () => activatePanel(tab.dataset.panel)));
   $$(".output-tab").forEach(tab => tab.addEventListener("click", () => switchOutput(tab.dataset.output)));
   $$(".process-item").forEach(item => item.addEventListener("click", () => runProcess(item.dataset.action)));
@@ -421,7 +752,7 @@
   if (!$("#consoleContent").children.length) {
     addConsoleLine("INFO", "ISE 14.7 inspired workspace ready.");
     addConsoleLine("INFO", "Project data is saved locally in this browser.");
-    addConsoleLine("INFO", "Check Source performs a lightweight structure review only.");
+    addConsoleLine("INFO", "Verilog/SystemVerilog can be synthesized to supported Xilinx-family cells; VHDL can be edited and checked.");
+    addConsoleLine("INFO", "Yosys maps supported device families and can export EDIF; it does not create a Xilinx bitstream. Import HDL from the toolbar or File menu.");
   }
 })();
-

@@ -1,4 +1,14 @@
-_site/
+/_site/
+/ise-web-studio-static/
+/ise-web-studio-static.zip
 *.iseweb.json
-ise-web-studio-static.zip
 
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor temporary files
+*.swp
+*.swo
+*.tmp

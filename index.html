@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#273c62" />
+    <meta name="theme-color" content="#526f8d" />
     <title>ISE 14.7 Web Studio</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -33,9 +33,11 @@
         <button class="tool-button" id="newProjectButton"><span class="tool-icon new-icon">＋</span><span>New Project</span></button>
         <span class="tool-separator"></span>
         <button class="tool-button" id="addSourceButton"><span class="tool-icon file-icon">▤</span><span>Add Source</span></button>
+        <button class="tool-button" id="importHdlButton"><span class="tool-icon file-icon">↥</span><span>Import HDL</span></button>
         <button class="tool-button" id="saveButton"><span class="tool-icon save-icon">▣</span><span>Save</span></button>
         <span class="tool-separator"></span>
         <button class="tool-button primary-tool" id="checkButton"><span class="tool-icon run-icon">▶</span><span>Check Source</span></button>
+        <button class="tool-button primary-tool" id="synthesizeButton"><span class="tool-icon run-icon">▶</span><span>Synthesize</span></button>
         <div class="toolbar-spacer"></div>
         <span class="device-label"><span class="chip-icon">▦</span><span id="deviceLabel">Spartan-6 · xc6slx9</span></span>
         <span class="saved-indicator" id="savedIndicator"><span class="saved-dot"></span>Saved in this browser</span>
@@ -65,10 +67,11 @@
                   <div class="process-group"><span class="disclosure">⌄</span><span class="gear small-gear">⚙</span><span>Design Utilities</span></div>
                   <button class="process-item" data-action="check"><span class="process-play">▶</span>Check Source Structure</button>
                   <button class="process-item" data-action="source"><span class="process-play">▶</span>View HDL Source</button>
-                  <div class="process-group"><span class="disclosure">›</span><span class="gear small-gear">⚙</span><span>Synthesize - XST</span></div>
+                  <div class="process-group"><span class="disclosure">⌄</span><span class="gear small-gear">⚙</span><span>Synthesis</span></div>
+                  <button class="process-item" data-action="synthesize"><span class="process-play">▶</span>Synthesize Verilog for Xilinx</button>
                   <div class="process-group"><span class="disclosure">›</span><span class="gear small-gear">⚙</span><span>Implement Design</span></div>
                   <div class="process-group"><span class="disclosure">›</span><span class="gear small-gear">⚙</span><span>Generate Programming File</span></div>
-                  <div class="process-note">Vendor synthesis and bitstream tools are not connected in this browser prototype.</div>
+                  <div class="process-note">Yosys maps Verilog to supported Xilinx-family cells and exports JSON/EDIF. Place-and-route and bitstream generation are not included.</div>
                 </div>
               </section>
             </div>
@@ -77,18 +80,18 @@
 
           <section class="editor-region" aria-label="Source editor">
             <div class="document-tabs" id="documentTabs">
-              <button class="doc-tab active" data-document="source"><span class="vhdl-badge">V</span><span id="activeTabName">blinky.vhd</span><span class="tab-close" aria-hidden="true">×</span></button>
+              <button class="doc-tab active" data-document="source"><span class="vhdl-badge">V</span><span id="activeTabName">blinky.v</span><span class="tab-close" aria-hidden="true">×</span></button>
               <div class="tab-tools"><button title="Split editor">▥</button><button title="More options">⋮</button></div>
             </div>
             <div class="editor-toolbar">
-              <div class="editor-location"><span class="crumb-root">led_blink</span><span class="crumb-sep">›</span><span id="breadcrumbFile">blinky.vhd</span></div>
-              <div class="editor-tools"><button id="fontDown" title="Decrease text size">A−</button><button id="fontUp" title="Increase text size">A+</button><span class="editor-separator"></span><span id="languageBadge">VHDL</span></div>
+              <div class="editor-location"><span class="crumb-root">led_blink</span><span class="crumb-sep">›</span><span id="breadcrumbFile">blinky.v</span></div>
+              <div class="editor-tools"><button id="fontDown" title="Decrease text size">A−</button><button id="fontUp" title="Increase text size">A+</button><span class="editor-separator"></span><span id="languageBadge">Verilog</span></div>
             </div>
             <div class="editor-wrap">
               <div class="line-numbers" id="lineNumbers" aria-hidden="true"></div>
               <textarea class="code-editor" id="codeEditor" aria-label="HDL source editor" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
             </div>
-            <div class="editor-status"><span id="cursorPosition">Ln 1, Col 1</span><span>UTF-8</span><span id="statusLanguage">VHDL</span><span class="status-spacer"></span><span class="status-ready"><span></span>Ready</span></div>
+            <div class="editor-status"><span id="cursorPosition">Ln 1, Col 1</span><span>UTF-8</span><span id="statusLanguage">Verilog</span><span class="status-spacer"></span><span class="status-ready"><span></span>Ready</span></div>
           </section>
         </div>
 
@@ -97,7 +100,8 @@
             <button class="output-tab active" role="tab" aria-selected="true" data-output="console">Console</button>
             <button class="output-tab" role="tab" aria-selected="false" data-output="errors">Errors <span class="count-pill" id="errorCount">0</span></button>
             <button class="output-tab" role="tab" aria-selected="false" data-output="warnings">Warnings <span class="count-pill" id="warningCount">0</span></button>
-            <div class="output-tab-actions"><button id="clearConsole">Clear</button><button title="Collapse output">⌄</button></div>
+            <button class="output-tab" role="tab" aria-selected="false" data-output="synthesis">Synthesis</button>
+            <div class="output-tab-actions"><button id="downloadEdif" hidden>Download EDIF</button><button id="downloadNetlist" hidden>Download Netlist JSON</button><button id="clearConsole">Clear</button><button title="Collapse output">⌄</button></div>
           </div>
           <div class="console-view" id="consoleView" role="tabpanel">
             <div class="console-toolbar"><span>Messages</span><span class="console-path" id="consoleProject">led_blink</span></div>
@@ -118,4 +122,3 @@
     <script src="app.js"></script>
   </body>
 </html>
-
